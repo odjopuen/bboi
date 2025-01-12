@@ -1,48 +1,55 @@
 import os
+import subprocess
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
-import subprocess
+from datetime import datetime
 
-# Paths
+# Path to your credentials file
 CREDENTIALS_FILE = "/home/dakboard/myenv/credentials/credentials.json"
-LAST_DATA_FILE = "/home/dakboard/myenv/last_google_data.txt"
-INDEX_FILE = "/home/dakboard/myenv/bboi/index.html"
-UPDATE_SCRIPT = "/home/dakboard/myenv/bboi/update_github.py"
 
-# Google Sheets setup
+# Google Sheets API setup
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-SPREADSHEET_ID = "1htUrHqALLhLm_OYdL04Zik2BtC9jSWKuGp1lC6wrcYc"
+creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
+
+SPREADSHEET_ID = "1htUrHqALLhLm_OYdL04Zik2BtC9jSWKuGp1lC6wrcYc"  # Replace with your ID
 RANGE_NAME = "Sheet1!A1:Z1000"
 
-# Initialize Google Sheets API
-creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
-service = build("sheets", "v4", credentials=creds)
+# Log file path
+LOG_FILE = "/home/dakboard/myenv/check_log.txt"
 
-def fetch_latest_data():
-    """Fetch the latest rows from Google Sheets."""
-    sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
-    rows = result.get("values", [])
-    return rows[-10:] if len(rows) > 10 else rows[1:]
+# Path to index.html
+INDEX_FILE = "/home/dakboard/myenv/bboi/index.html"
 
-def load_last_data():
-    """Load the last fetched data from a file."""
-    if os.path.exists(LAST_DATA_FILE):
-        with open(LAST_DATA_FILE, "r") as file:
-            return file.read()
-    return ""
+def log_message(message):
+    """Log messages to a file for debugging."""
+    with open(LOG_FILE, "a") as log:
+        log.write(f"{datetime.now()} - {message}\n")
 
-def save_last_data(data):
-    """Save the latest fetched data to a file."""
-    with open(LAST_DATA_FILE, "w") as file:
-        file.write(data)
+def fetch_last_ten_rows():
+    """Fetch the last 10 rows from Google Sheets."""
+    try:
+        service = build("sheets", "v4", credentials=creds)
+        sheet = service.spreadsheets()
+        result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
+        rows = result.get("values", [])
+        return rows[-10:] if len(rows) > 10 else rows[1:]  # Exclude header
+    except Exception as e:
+        log_message(f"Error fetching data from Google Sheets: {e}")
+        return []
+
+def load_existing_content():
+    """Load existing entries from index.html."""
+    try:
+        if os.path.exists(INDEX_FILE):
+            with open(INDEX_FILE, "r") as file:
+                return [line.strip() for line in file if line.strip().startswith("<p>")]
+    except Exception as e:
+        log_message(f"Error loading existing content: {e}")
+    return []
 
 def update_html(latest_rows):
-    """Update the HTML content."""
-    print("Updating index.html...")
-    content_lines = [f"<p>{' | '.join(row)}</p>" for row in latest_rows]
-
-    header_lines = [
+    """Update index.html with the last 10 rows."""
+    header = [
         "<!DOCTYPE html>\n",
         "<html>\n",
         "<head>\n",
@@ -51,33 +58,41 @@ def update_html(latest_rows):
         "<body>\n",
         "    <h1>Inputs Log</h1>\n"
     ]
-    footer_lines = ["</body>\n", "</html>\n"]
+    footer = ["</body>\n", "</html>\n"]
+    content = [f"<p>{' | '.join(row)}</p>" for row in latest_rows]
 
-    with open(INDEX_FILE, "w") as file:
-        file.writelines(header_lines + content_lines + footer_lines)
-
-    print("index.html updated.")
+    try:
+        with open(INDEX_FILE, "w") as file:
+            file.writelines(header + content + footer)
+        log_message("Updated index.html with the latest data.")
+    except Exception as e:
+        log_message(f"Error updating index.html: {e}")
 
 def main():
-    try:
-        print("Fetching the latest data from Google Sheets...")
-        latest_rows = fetch_latest_data()
-        latest_data_str = "\n".join([" | ".join(row) for row in latest_rows])
+    """Main function to check for updates and trigger GitHub push."""
+    log_message("Checking for updates...")
 
-        # Compare with the last saved data
-        last_data = load_last_data()
-        if latest_data_str != last_data:
-            print("New data found! Updating index.html...")
-            save_last_data(latest_data_str)
-            update_html(latest_rows)
+    # Fetch new data and compare with existing content
+    latest_rows = fetch_last_ten_rows()
+    existing_content = load_existing_content()
+    formatted_latest = [f"<p>{' | '.join(row)}</p>" for row in latest_rows]
 
-            # Trigger the GitHub update script
-            print("Triggering GitHub update...")
-            subprocess.run(["python", UPDATE_SCRIPT], check=True)
-        else:
-            print("No new data found. Exiting.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    # Check if there are changes
+    if formatted_latest != existing_content:
+        log_message("Changes detected. Updating index.html and triggering GitHub update.")
+        update_html(latest_rows)
+
+        # Trigger the GitHub update script
+        try:
+            subprocess.run(
+                ["/home/dakboard/myenv/bin/python", "/home/dakboard/myenv/bboi/update_github.py"],
+                check=True
+            )
+            log_message("GitHub update triggered successfully.")
+        except subprocess.CalledProcessError as e:
+            log_message(f"Error triggering GitHub update: {e}")
+    else:
+        log_message("No changes detected. Skipping update.")
 
 if __name__ == "__main__":
     main()

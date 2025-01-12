@@ -4,6 +4,9 @@ from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
+# Ensure script is running in the correct directory
+os.chdir("/home/dakboard/myenv/bboi")
+
 # Path to your credentials file
 CREDENTIALS_FILE = "/home/dakboard/myenv/credentials/credentials.json"
 

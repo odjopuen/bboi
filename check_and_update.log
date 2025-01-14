@@ -76,3 +76,6 @@ No changes detected. Exiting.
 Fetching remote file for comparison...
 Error fetching remote file: Command 'git show origin/main:index.html > /home/dakboard/myenv/tmp/remote_index.html' returned non-zero exit status 128.
 No changes detected. Exiting.
+Fetching remote file for comparison...
+Error fetching remote file: Command 'git show origin/main:index.html > /home/dakboard/myenv/tmp/remote_index.html' returned non-zero exit status 128.
+No changes detected. Exiting.
